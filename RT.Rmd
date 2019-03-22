@@ -1,0 +1,89 @@
+---
+title:"DYSCO C1"
+subtitle: "Pre-test"
+author: "Shauni Van Herck"
+data: "December 2018 - March 2019"
+output:
+---
+
+``` {r theme, echo=FALSE}
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(stringr)
+library(rjson)
+library(data.table)
+library(readxl) 
+library(writexl)
+```
+
+# 1. Background information & Reading of results files
+Data from the rise time task, conducted during the DYSCO C1 pre-test ASSR. Subjects are 5-year-old children with a cognitive risk for dyslexia. Rise time task was conducted two times, during a test and a re-test, with a small break in between both. 
+
+
+```{r, echo=FALSE}
+#Filepaths
+RT_files <- dir('RT_results_pre', pattern = ".apr$", full.names=T)
+
+source('a3resultsadaptive.R')
+```
+
+```{r, echo=FALSE}
+RT_data_pre <- data.frame()
+RT_mean_pre <- data.frame()
+filenames = list(RT_files)
+
+for (filename in filenames){
+
+for(i in 1:length(filename)){
+  
+  # load r from source script
+  r <- a3resultsadaptive(filename[i])
+
+  # add a few columns to r
+  r$raw$subject <- r$interactive[["apex:apex/results[1]/subject[1]"]]
+  r$mean$subject <- r$interactive[["apex:apex/results[1]/subject[1]"]]
+  r$raw$group <- 1
+  r$mean$group <- 1
+    # in this sample all children are risk, hence 1 is written for each subject
+    # group 1 = risk child
+    # gorup 0 = control child
+  r$raw$level <- r$interactive[["/apex:apex/calibration[1]/parameters[1]/parameter[1]/targetamplitude[1]"]]
+    # sound level
+
+  ifelse(grepl('_1',r$raw$subject) == TRUE, r$raw$testretest <- 1, r$raw$testretest <- 2)
+  ifelse(grepl('_1',r$mean$subject) == TRUE, r$mean$testretest <- 1, r$mean$testretest <- 2)
+    # if _1 is part of the subject name, testretest = 1, otherwise testretest = 2
+    # testretest 1 = test
+    # testretest 2 = retest
+  
+  # reorder columns
+  r$raw2 <- r$raw[, c(3, 4, 6, 5, 1, 2)]
+  r$mean2 <- r$mean[,c(2, 3, 4, 1)]
+    # when adding a new column, eg. intervention group, don't forget to also change it here
+  
+  #alle data weergeven
+  RT_data_pre <- rbind(RT_data_pre, r$raw2)
+  RT_mean_pre <- rbind(RT_mean_pre, r$mean2)
+  
+}
+}
+
+write.csv(RT_data_pre, file = "RT_data_pre.csv",row.names=FALSE)
+write.csv(RT_mean_pre, file = "RT_mean_pre.csv",row.names=FALSE)
+write_xlsx(RT_mean_pre, "RT_mean_pre.xlsx")
+```
+
+```{r, echo=FALSE}
+
+
+# DWZlistenSWN <- read.csv(file="Datasets/Datasets_Chebyshev_Pipeline2018/dwzswnlisten.csv", row.names=NULL, header=TRUE, sep=";", stringsAsFactors = FALSE)
+# 
+#   if(grep("_1", r$mean$subject)){ 
+#   a <- unlist(str_split(r$mean$subject, "_"))
+#   r$mean$testretest <- last(a)
+#   r$raw$testretest <- last(a)}else{
+#     r$mean$testretest <- "NaN"
+#     r$raw$testretest <- "NaN"
+#   }
+```
