@@ -80,7 +80,7 @@ colnames(RT_post_thresholds)  <- c("subject", "group", "pretest", "posttest")
 head(RT_post_thresholds) 
 
 # median + iqr                                  # non-normal data so median + IQR instead of mean + sd
-descriptives            <- cast(RT_post_melt, group*prepost ~ ., c(median,IQR,quantile(RT_)))
+descriptives            <- cast(RT_post_melt, group*prepost ~ ., c(median,IQR))
 names(descriptives)[3]  <- "median"
 names(descriptives)[4]  <- "IQR"
 descriptives
@@ -97,7 +97,7 @@ RT_post_melt  <- melt(RT_post, id.var=c("fsubject", "fgroup", "fprepost"), measu
 RT_post_wide  <- cast(fsubject + fgroup ~ fprepost , data=RT_post_melt, mean)
 head(RT_post_wide)
 
-# USING MEDIAN + IQR
+#USING MEDIAN + IQR#
 
 # prepare data
 
@@ -111,40 +111,48 @@ quantile75 = function(data){
   return(x)
 }
 
-data.plot.fgroupfprepost            <- cast(RT_post_melt, fgroup*fprepost ~ ., c(median,quantile25,quantile75))
-names(data.plot.fgroupfprepost)[3]  <- "median"
-data.plot.fgroupfprepost
-data.plot.fgroupfprepost            <- head(data.plot.fgroupfprepost, -1)               # remove PC (not informative yet)
-data.plot.fgroupfprepost
+plot.median.iqr            <- cast(RT_post_melt, fgroup*fprepost ~ ., c(median,quantile25,quantile75))
+names(plot.median.iqr)[3]  <- "median"
+plot.median.iqr
+plot.median.iqr            <- head(plot.median.iqr, -1)               # remove PC (not informative yet)
+plot.median.iqr
 
 # ggplot                                  # you need data frame with mean and sd for this, me
-bar  <- ggplot(data.plot.fgroupfprepost, aes(x=fgroup, y=median, fill=fprepost)) + 
-  geom_bar(stat="identity", color="black", 
-           position=position_dodge()) +
-  geom_errorbar(aes(ymin=quantile25, ymax=quantile75), width=.2,
-                position=position_dodge(.9)) 
-print(bar)
+bar.median.iq  <- ggplot(plot.median.iqr, aes(x=fgroup, y=median, fill=fprepost)) + 
+                    geom_bar(stat="identity", color="black", 
+                       position=position_dodge()) +
+                    geom_errorbar(aes(ymin=quantile25, ymax=quantile75), width=.2,
+                       position=position_dodge(.9)) +
+                    ggtitle(label = "Intervention effect on rise time task") + xlab(label="Group") + ylab(label="Median threshold") +
+                    labs(fill = "Testing phase")                                     #change names axes and legend
+print(bar.median.iq)
 
-# USING MEAN + SD - not ideal for skewed data
+#PAIRWISE COMPARISON
+scatterplot       <- ggplot(RT_post_wide, aes(x=pretest, y=posttest, color=fgroup)) +
+                         geom_point() + 
+                     ggtitle(label="Pretest / posttest per kid") + labs(color="group")
+print(scatterplot)
+
+
+#USING MEAN + SD - not ideal for skewed data#
 # interaction effect group - testing
 
 # prepare data
-data.plot.fgroupfprepost            <- cast(RT_post_melt, fgroup*fprepost ~ ., c(mean,sd))
-names(data.plot.fgroupfprepost)[3]  <- "threshold"
-data.plot.fgroupfprepost
-data.plot.fgroupfprepost            <- head(data.plot.fgroupfprepost, -1)               # remove PC (not informative yet)
-data.plot.fgroupfprepost
-
-# xyplot
-print(xyplot(threshold ~ fprepost, groups = fgroup, type=c("g", "b"), auto.key=list(colums=2, corner=c(0.1,0.9),lines=T), data=data.plot.fgroupfprepost, ylim = c(0,350), main = "Intervention effect on rise time task", xlab = "Testing phase", ylab = "threshold"))
+plot.mean.sd           <- cast(RT_post_melt, fgroup*fprepost ~ ., c(mean,sd))
+names(plot.mean.sd)[3]  <- "threshold"
+plot.mean.sd
+plot.mean.sd            <- head(plot.mean.sd, -1)               # remove PC (not informative yet)
+plot.mean.sd
 
 # ggplot                                  # you need data frame with mean and sd for this, me
-bar  <- ggplot(data.plot.fgroupfprepost, aes(x=fgroup, y=threshold, fill=fprepost)) + 
-            geom_bar(stat="identity", color="black", 
-                position=position_dodge()) +
-            geom_errorbar(aes(ymin=threshold-sd, ymax=threshold+sd), width=.2,
-                position=position_dodge(.9)) 
-print(bar)
+bar.mean.sd  <- ggplot(plot.mean.sd, aes(x=fgroup, y=threshold, fill=fprepost)) + 
+                    geom_bar(stat="identity", color="black", 
+                        position=position_dodge()) +
+                    geom_errorbar(aes(ymin=threshold-sd, ymax=threshold+sd), width=.2,
+                        position=position_dodge(.9)) +
+                    ggtitle(label = "Intervention effect on rise time task") + xlab(label="Group") + ylab(label="Mean threshold") +
+                    scale_fill_discrete(name = "Testing phase")   
+print(bar.mean.sd)
 
 
 line  <- ggplot(data.plot.fgroupfprepost, aes(x=fprepost, y=threshold, group=fgroup, color=fgroup)) + 
@@ -155,20 +163,30 @@ line  <- ggplot(data.plot.fgroupfprepost, aes(x=fprepost, y=threshold, group=fgr
 print(line)
 
 
-# boxplot
+#BOXPLOT#
 boxplot(value~fprepost:fgroup, data=RT_post_melt)             # some outliers
 boxplot(RT_post_melt$value)
 
 
-
-
-
-
-
-
-
-
-
+# normality check ------
+fitQQ <- lm(threshold ~ fprepost+fgroup, data=RT_post)
+qqPlot(fitQQ, main="QQ Plot")
+plot(fitQQ, 2)
+library(MASS)
+sresid <- studres(fitQQ) 
+hist(sresid, freq=FALSE, main="Distribution of Studentized Residuals")
+xfit<-seq(min(sresid),max(sresid),length=40) 
+yfit<-dnorm(xfit) 
+lines(xfit, yfit)
+# Extract the residuals
+fit_residuals <- residuals(object = fitQQ)
+# Run Shapiro-Wilk test
+shapiro.test(x = fit_residuals )
+#####################################
+# Shapiro-Wilk normality test       #
+# p =  1.461e-10                    #
+# normality assumption violated     #
+#####################################
 
 
 # sukkelruimte ------
@@ -185,42 +203,6 @@ RT_post[which(RT_post$threshold %in% outliers),]
 
 
 
-subset(RT_post, group < 4)
-
-for (group_number in 1:4){
-  # sukkel sukkel
-}
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-# check normality of residuals
-fitQQ <- lm(threshold ~ fprepost+fgroup, data=RT_post)
-qqPlot(fitQQ, main="QQ Plot")
-plot(fitQQ, 2)
-library(MASS)
-sresid <- studres(fitQQ) 
-hist(sresid, freq=FALSE, main="Distribution of Studentized Residuals")
-xfit<-seq(min(sresid),max(sresid),length=40) 
-yfit<-dnorm(xfit) 
-lines(xfit, yfit)
-# Extract the residuals
-fit_residuals <- residuals(object = fitQQ)
-# Run Shapiro-Wilk test
-shapiro.test(x = fit_residuals )
-#####################################
-# Shapiro-Wilk normality test       #
-# p =  1.739e-06                    #
-# normality assumption violated     #
-#####################################
