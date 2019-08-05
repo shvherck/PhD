@@ -17,14 +17,17 @@ library(readxl)
 library(writexl)
 #load libraries to reshape (plyr for splitting etc.)
 library(reshape)
+library(reshape2)
 library(plyr)
 library(dplyr)
+library(tidyverse)
 #load library to plot
 library(lattice)
 library(ggplot2)
 #load library for permutation tests
 library(coin)
 library(lmPerm)
+library(ARTool)
 
 # prepare data ------
 
@@ -99,8 +102,6 @@ head(RT_post_wide)
 
 #USING MEDIAN + IQR#
 
-# prepare data
-
 # create functions to include in cast
 quantile25 = function(data){
   x = quantile(data, 0.25, na.rm=TRUE) 
@@ -111,64 +112,61 @@ quantile75 = function(data){
   return(x)
 }
 
+# PLOT INCLUDING ALL DATA #
+# prepare data
 plot.median.iqr            <- cast(RT_post_melt, fgroup*fprepost ~ ., c(median,quantile25,quantile75))
 names(plot.median.iqr)[3]  <- "median"
 plot.median.iqr
 plot.median.iqr            <- head(plot.median.iqr, -1)               # remove PC (not informative yet)
 plot.median.iqr
 
-# ggplot                                  # you need data frame with mean and sd for this, me
-bar.median.iq  <- ggplot(plot.median.iqr, aes(x=fgroup, y=median, fill=fprepost)) + 
+# ggplot                                                              # you need data frame with median and quantiles for this
+bar.median.iqr  <- ggplot(plot.median.iqr, aes(x=fgroup, y=median, fill=fprepost)) + 
                     geom_bar(stat="identity", color="black", 
                        position=position_dodge()) +
                     geom_errorbar(aes(ymin=quantile25, ymax=quantile75), width=.2,
                        position=position_dodge(.9)) +
                     ggtitle(label = "Intervention effect on rise time task") + xlab(label="Group") + ylab(label="Median threshold") +
                     labs(fill = "Testing phase")                                     #change names axes and legend
-print(bar.median.iq)
+print(bar.median.iqr)
 
-#PAIRWISE COMPARISON
+# pairwise comparison
 scatterplot       <- ggplot(RT_post_wide, aes(x=pretest, y=posttest, color=fgroup)) +
                          geom_point() + 
                      ggtitle(label="Pretest / posttest per kid") + labs(color="group")
 print(scatterplot)
 
-
-#USING MEAN + SD - not ideal for skewed data#
-# interaction effect group - testing
-
-# prepare data
-plot.mean.sd           <- cast(RT_post_melt, fgroup*fprepost ~ ., c(mean,sd))
-names(plot.mean.sd)[3]  <- "threshold"
-plot.mean.sd
-plot.mean.sd            <- head(plot.mean.sd, -1)               # remove PC (not informative yet)
-plot.mean.sd
-
-# ggplot                                  # you need data frame with mean and sd for this, me
-bar.mean.sd  <- ggplot(plot.mean.sd, aes(x=fgroup, y=threshold, fill=fprepost)) + 
-                    geom_bar(stat="identity", color="black", 
-                        position=position_dodge()) +
-                    geom_errorbar(aes(ymin=threshold-sd, ymax=threshold+sd), width=.2,
-                        position=position_dodge(.9)) +
-                    ggtitle(label = "Intervention effect on rise time task") + xlab(label="Group") + ylab(label="Mean threshold") +
-                    scale_fill_discrete(name = "Testing phase")   
-print(bar.mean.sd)
-
-
-line  <- ggplot(data.plot.fgroupfprepost, aes(x=fprepost, y=threshold, group=fgroup, color=fgroup)) + 
-              geom_line() +
-              geom_point()+
-              geom_errorbar(aes(ymin=threshold-sd, ymax=threshold+sd), width=.2,
-                   position=position_dodge(0.05))
-print(line)
-
-
-#BOXPLOT#
+# boxplot
 boxplot(value~fprepost:fgroup, data=RT_post_melt)             # some outliers
 boxplot(RT_post_melt$value)
 
+# PLOT WITHOUT EXCLUDED DATA AOV #
+# prepare data
+RT_post_aov           = subset(RT_post_withoutPC, !subject%in%c('i011','i017','i061','i064','i080','i124','i133','i138','i177')) 
+
+RT_post_aov$fsubject  = factor(RT_post_aov$subject)
+RT_post_aov$fgroup    = factor(RT_post_aov$group,   levels = c(1,2,3), labels = c("GG_EE", "GG_NE", "Active_Control"))
+RT_post_aov$fprepost  = factor(RT_post_aov$prepost, levels = c(1,2),     labels = c("pretest", "posttest"))
+
+RT_post_melt_aov               = melt(RT_post_aov, id.var=c("fsubject", "fgroup", "fprepost"), measure.var=c("threshold"))
+
+plot.median.iqr.aov            = cast(RT_post_melt_aov, fgroup*fprepost ~ ., c(median,quantile25,quantile75))
+names(plot.median.iqr.aov)[3]  = "median"
+plot.median.iqr.aov
+
+# ggplot                                                              # you need data frame with median and quantiles for this
+bar.median.iqr.aov  = ggplot(plot.median.iqr.aov, aes(x=fgroup, y=median, fill=fprepost)) + 
+                        geom_bar(stat="identity", color="black", 
+                           position=position_dodge()) +
+                        geom_errorbar(aes(ymin=quantile25, ymax=quantile75), width=.2,
+                           position=position_dodge(.9)) +
+                      ggtitle(label = "Intervention effect on rise time task") + xlab(label="Group") + ylab(label="Median threshold") +
+                      labs(fill = "Testing phase")                                     #change names axes and legend
+print(bar.median.iqr.aov)
+
 
 # normality check ------
+
 fitQQ <- lm(threshold ~ fprepost+fgroup, data=RT_post)
 qqPlot(fitQQ, main="QQ Plot")
 plot(fitQQ, 2)
@@ -182,11 +180,46 @@ lines(xfit, yfit)
 fit_residuals <- residuals(object = fitQQ)
 # Run Shapiro-Wilk test
 shapiro.test(x = fit_residuals )
-#####################################
-# Shapiro-Wilk normality test       #
-# p =  1.461e-10                    #
-# normality assumption violated     #
-#####################################
+  # normality assumption violated
+
+# check homogeneity of variances
+leveneTest(threshold ~ fgroup*fprepost, data = RT_post)
+  # homogeneity of variances assumption violated
+
+# analyses ------------
+
+kruskal.test(threshold ~ fgroup, data =  RT_post)                                   # kruskal: when factor contains more than two levels
+  # one-way analysis group: no sign difference between groups                       
+
+wilcox.test(RT_post_wide$pretest, RT_post_wide$posttest, alternative ="greater",    # wilcoxon:  when comparing two conditions with paired observations
+            paired = TRUE)                                                          # mann-whitney: two conditions with independent observations
+  # one-way analysis test phase: sign difference between pretest and posttest
+  # Ha not possible in terms of mean, median, ... because of non-parametric test
+  # Kids are more likely to have lower RT thresholds in the post-test compared
+  # to the pre-test (course non-parametric testing p. 29)
+                                                                    
+
+# using lmPerm library
+
+# remove subjects for which we have missing values - aov can't handle this
+# already done in plotting section
+
+Permutation <- aovp(threshold ~ fgroup*fprepost + Error(fsubject/fprepost), data=RT_post_aov, perm="Exact")
+summary(Permutation)
+
+RT_post_aov_ph <- dcast(RT_post_aov, fsubject ~ fgroup + fprepost, value.var="threshold")
+head(RT_post_aov_ph)
+
+GGEEpre_vs_GGEEpost = wilcox.test(RT_post_aov_ph$GG_EE_pretest, 
+                                  RT_post_aov_ph$GG_EE_posttest, paired=TRUE)$p.value              # 0.000282179  (adjusted)         
+GGNEpre_vs_GGNEpost = wilcox.test(RT_post_aov_ph$GG_NE_pretest, 
+                                  RT_post_aov_ph$GG_NE_posttest, paired=TRUE)$p.value              # 0.077459840  (adjusted)
+ACpre_vs_ACpost     = wilcox.test(RT_post_aov_ph$Active_Control_pretest, 
+                                  RT_post_aov_ph$Active_Control_posttest, paired=TRUE)$p.value     # 0.415457596  (adjusted)
+
+p.adjust(c(GGEEpre_vs_GGEEpost, GGNEpre_vs_GGNEpost, ACpre_vs_ACpost), method="holm")
+
+
 
 
 # sukkelruimte ------
@@ -202,7 +235,14 @@ RT_post[which(RT_post$threshold %in% outliers),]
 
 
 
+# ARTool
 
+# ART needs subject as first column and DV as last column with IV's in between
+RT_post_ART <- RT_post[,c('subject','fgroup','fprepost','threshold')]
+head(RT_post_ART)
 
-
-
+m           <- art(threshold ~ fgroup * fprepost + (1|subject), data=RT_post_ART)
+            # (1|subject):              anova run as lmer
+            # Error(fsubject/fprepost): anova run as RM anova
+summary(m)  # F values of ANOVAs on aligned responses not of interest are not all approx. 0: ART may not be appropriate
+anova(m)
