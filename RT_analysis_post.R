@@ -24,6 +24,7 @@ library(tidyverse)
 #load library to plot
 library(lattice)
 library(ggplot2)
+library(sm)
 #load library for permutation tests
 library(coin)
 library(lmPerm)
@@ -148,7 +149,9 @@ RT_post_aov$fsubject  = factor(RT_post_aov$subject)
 RT_post_aov$fgroup    = factor(RT_post_aov$group,   levels = c(1,2,3), labels = c("GG_EE", "GG_NE", "Active_Control"))
 RT_post_aov$fprepost  = factor(RT_post_aov$prepost, levels = c(1,2),     labels = c("pretest", "posttest"))
 
-RT_post_melt_aov               = melt(RT_post_aov, id.var=c("fsubject", "fgroup", "fprepost"), measure.var=c("threshold"))
+RT_post_melt_aov      = melt(RT_post_aov, id.var=c("fsubject", "fgroup", "fprepost"), measure.var=c("threshold"))
+RT_post_wide_aov      = cast(fsubject + fgroup ~ fprepost , data=RT_post_melt_aov, mean)
+head(RT_post_wide_aov)
 
 plot.median.iqr.aov            = cast(RT_post_melt_aov, fgroup*fprepost ~ ., c(median,quantile25,quantile75))
 names(plot.median.iqr.aov)[3]  = "median"
@@ -186,18 +189,26 @@ shapiro.test(x = fit_residuals )
 leveneTest(threshold ~ fgroup*fprepost, data = RT_post)
   # homogeneity of variances assumption violated
 
+# check equality of distributions for permutation testing
+sm.density.compare(RT_post$threshold, RT_post$fgroup)
+  # distributions appear to be quite equal
+
+
 # analyses ------------
 
-kruskal.test(threshold ~ fgroup, data =  RT_post)                                   # kruskal: when factor contains more than two levels
+# order data for Kruskal.test (order by group)
+RT_post_aov_ordered = RT_post_aov[order(RT_post_aov$fgroup),]
+kruskal.test(threshold ~ fgroup, data =  RT_post_aov_ordered)                     # kruskal: when factor contains more than two levels
   # one-way analysis group: no sign difference between groups                       
 
-wilcox.test(RT_post_wide$pretest, RT_post_wide$posttest, alternative ="greater",    # wilcoxon:  when comparing two conditions with paired observations
-            paired = TRUE)                                                          # mann-whitney: two conditions with independent observations
+wilcox.test(RT_post_wide_aov$pretest, RT_post_wide_aov$posttest, 
+            alternative ="greater", paired = TRUE)                        # wilcoxon:  when comparing two conditions with paired observations
+# mann-whitney: two conditions with independent observations
   # one-way analysis test phase: sign difference between pretest and posttest
   # Ha not possible in terms of mean, median, ... because of non-parametric test
   # Kids are more likely to have lower RT thresholds in the post-test compared
   # to the pre-test (course non-parametric testing p. 29)
-                                                                    
+
 
 # using lmPerm library
 
@@ -210,17 +221,28 @@ summary(Permutation)
 RT_post_aov_ph <- dcast(RT_post_aov, fsubject ~ fgroup + fprepost, value.var="threshold")
 head(RT_post_aov_ph)
 
-GGEEpre_vs_GGEEpost = wilcox.test(RT_post_aov_ph$GG_EE_pretest, 
-                                  RT_post_aov_ph$GG_EE_posttest, paired=TRUE)$p.value              # 0.000282179  (adjusted)         
-GGNEpre_vs_GGNEpost = wilcox.test(RT_post_aov_ph$GG_NE_pretest, 
-                                  RT_post_aov_ph$GG_NE_posttest, paired=TRUE)$p.value              # 0.077459840  (adjusted)
-ACpre_vs_ACpost     = wilcox.test(RT_post_aov_ph$Active_Control_pretest, 
-                                  RT_post_aov_ph$Active_Control_posttest, paired=TRUE)$p.value     # 0.415457596  (adjusted)
+GGEEpre_vs_GGEEpost = wilcox.test(RT_post_aov_ph$GG_EE_pretest,                            # 0.0001410895  (holm)
+                                  RT_post_aov_ph$GG_EE_posttest,                           # 0.0001410895  (bonferroni)
+                                  paired=TRUE, alternative="greater")$p.value                       
+GGNEpre_vs_GGNEpost = wilcox.test(RT_post_aov_ph$GG_NE_pretest,                            # 0.0387299202  (holm)                         
+                                  RT_post_aov_ph$GG_NE_posttest,                           # 0.0580948803  (bonferroni)
+                                  paired=TRUE, alternative="greater")$p.value              
+ACpre_vs_ACpost     = wilcox.test(RT_post_aov_ph$Active_Control_pretest,                  # 0.2077287478  (holm)
+                                  RT_post_aov_ph$Active_Control_posttest,                 # 0.6231862435
+                                  paired=TRUE, alternative="greater")$p.value              
+  # important: cannot compute exact p-values because of ties (all cases) and zeroes (case 2 & 3)
 
-p.adjust(c(GGEEpre_vs_GGEEpost, GGNEpre_vs_GGNEpost, ACpre_vs_ACpost), method="holm")
+p.adjust(c(GGEEpre_vs_GGEEpost, GGNEpre_vs_GGNEpost, ACpre_vs_ACpost), method="bonferroni")  
 
+# other options -----------
 
-
+# we can do wilcox.test with wide data format (as done before), but also in long data format
+RT_post_aov_ordered2 = RT_post_aov[order(RT_post_aov$fprepost, RT_post_aov$subject),]
+wilcox.test(threshold~fprepost, data=RT_post_aov_ordered2,
+            alternative ="greater", paired = TRUE) 
+# for this option (long data) the data need to be ordered so that the first observation where fprepost = pretest is paired to the first
+# observation where fprepost = posttest (this is the case in both RT_post_aov and RT_post_aov_ordered2)
+# for wide format we don't need to order in a specific way because we have all thesholds on one line
 
 # sukkelruimte ------
 
