@@ -30,6 +30,11 @@ library(sm)
 library(coin)
 library(lmPerm)
 library(ARTool)
+#load library for mixed models
+library(lme4)
+library(lmerTest)
+library(emmeans)
+library(lmmeans)
 
 # prepare data ------
 
@@ -39,12 +44,12 @@ setwd(dir = "C:/Users/u0125029/Documents/3. Onderzoek/3. Post-test 2019/5. Analy
 RT_post           = read_excel("RT_mean_post_withmeanreversals.xlsx")
 colnames(RT_post) = c("subject", "group", "testretest", "meantrials", "meanreversals")
 RT_post$subject   = sapply(strsplit(RT_post$subject, split='_', fixed=TRUE), function(x) (x[1]))               #remove the '_1 / _2" from the subject name
-head(RT_post)                                                                                                   #x[1] indicates that you keep the part before '_', if you replace this by 2 you keep the part after '_'
+head(RT_post)                                                                                                  #x[1] indicates that you keep the part before '_', if you replace this by 2 you keep the part after '_'
 
 
 # replace parameters/labels with thresholds
 RT_post$meanreversals = floor(RT_post$meanreversals + 0.5)           #replacing the values only works with round labels
-                                                                      #r automatically rounds .5 down, working with floor(x + 0.5) rounds up from 0.5
+                                                                     #r automatically rounds .5 down, working with floor(x + 0.5) rounds up from 0.5
 label             = c(1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,
                        20,21,22,23,24,25,26,27,28,29,30,31,32,33, 34,35,
                        36,37,38,39,40,41,42,43,44,45,46,47,48,49,50)
@@ -64,7 +69,7 @@ RT_post         = RT_post[c("subject", "group", "prepost", "testretest", "meantr
 write_xlsx(RT_post, "RT_post_thresholds.xlsx")
 RT_post_testretest = RT_post
 
-# keep lowest threshold per subject + prepost combination
+# keep lowest threshold per subject + prepost combination (1 value for pretest and posttest per subject)
 RT_post <- merge(RT_post, aggregate(threshold ~ subject + prepost, data = RT_post, min))
 # remove duplicates 
 RT_post <- distinct(RT_post, subject,prepost,threshold, .keep_all=TRUE)               # use diff <- setdiff(df1, df2) to compare the data frames
@@ -76,6 +81,28 @@ write_xlsx(RT_post, "RT_post_final.xlsx")
 # create data frame without PC
 RT_post_withoutPC <- subset(RT_post, group < 4)
 
+# prepare entire dataset for plotting 
+RT_post$fsubject      = factor(RT_post$subject)
+RT_post$fgroup        = factor(RT_post$group,   levels = c(1,2,3,4), labels = c("GG_EE", "GG_NE", "Active_Control", "Passive_Control"))
+RT_post$fprepost      = factor(RT_post$prepost, levels = c(1,2),     labels = c("pretest", "posttest"))
+RT_post$logthreshold  = log(RT_post$threshold)
+RT_post               = subset(RT_post, fgroup%in%c('GG_EE', 'GG_NE', 'Active_Control'))
+
+RT_post_melt          = melt(RT_post, id.var=c("fsubject", "fgroup", "fprepost"), measure.var=c("threshold"))
+RT_post_wide          = cast(fsubject + fgroup ~ fprepost , data=RT_post_melt, mean)
+head(RT_post_wide)
+
+# prepare dataset without missing values for plotting (needed for aov)
+RT_post_aov           = subset(RT_post_withoutPC, !subject%in%c('i011','i017','i061','i064','i124','i133','i138','i177')) 
+
+RT_post_aov$fsubject  = factor(RT_post_aov$subject)
+RT_post_aov$fgroup    = factor(RT_post_aov$group,   levels = c(1,2,3), labels = c("GG_EE", "GG_NE", "Active_Control"))
+RT_post_aov$fprepost  = factor(RT_post_aov$prepost, levels = c(1,2),     labels = c("pretest", "posttest"))
+
+RT_post_melt_aov      = melt(RT_post_aov, id.var=c("fsubject", "fgroup", "fprepost"), measure.var=c("threshold"))
+RT_post_wide_aov      = cast(fsubject + fgroup ~ fprepost , data=RT_post_melt_aov, mean)
+head(RT_post_wide_aov)
+
 
 # descriptives ------
 
@@ -86,7 +113,7 @@ colnames(RT_post_thresholds)  <- c("subject", "group", "pretest", "posttest")
 head(RT_post_thresholds) 
 
 # median + iqr                                  # non-normal data so median + IQR instead of mean + sd
-descriptives            <- cast(RT_post_melt, group*prepost ~ ., c(median,IQR))
+descriptives            <- cast(RT_post_melt, group*prepost ~ ., fun.aggregate=c(median,IQR))
 names(descriptives)[3]  <- "median"
 names(descriptives)[4]  <- "IQR"
 descriptives
@@ -94,25 +121,6 @@ descriptives
   
 # plots ------
 
-# prepare entire dataset for plotting 
-RT_post$fsubject      = factor(RT_post$subject)
-RT_post$fgroup        = factor(RT_post$group,   levels = c(1,2,3,4), labels = c("GG_EE", "GG_NE", "Active_Control", "Passive_Control"))
-RT_post$fprepost      = factor(RT_post$prepost, levels = c(1,2),     labels = c("pretest", "posttest"))
-
-RT_post_melt          = melt(RT_post, id.var=c("fsubject", "fgroup", "fprepost"), measure.var=c("threshold"))
-RT_post_wide          = cast(fsubject + fgroup ~ fprepost , data=RT_post_melt, mean)
-head(RT_post_wide)
-
-# prepare dataset without missing values for plotting (needed for aov)
-RT_post_aov           = subset(RT_post_withoutPC, !subject%in%c('i011','i017','i061','i064','i080','i124','i133','i138','i177')) 
-
-RT_post_aov$fsubject  = factor(RT_post_aov$subject)
-RT_post_aov$fgroup    = factor(RT_post_aov$group,   levels = c(1,2,3), labels = c("GG_EE", "GG_NE", "Active_Control"))
-RT_post_aov$fprepost  = factor(RT_post_aov$prepost, levels = c(1,2),     labels = c("pretest", "posttest"))
-
-RT_post_melt_aov      = melt(RT_post_aov, id.var=c("fsubject", "fgroup", "fprepost"), measure.var=c("threshold"))
-RT_post_wide_aov      = cast(fsubject + fgroup ~ fprepost , data=RT_post_melt_aov, mean)
-head(RT_post_wide_aov)
 
 # prepare testretest dataset for plotting
 head(RT_post_testretest)
@@ -121,7 +129,7 @@ stimulus        = c(1,2,1,2)
 RT_post_testretest$testretest    = mapvalues(RT_post_testretest$testretest, from = label, to = stimulus)
 
 RT_post_testretest               = subset(RT_post_testretest, group < 4)
-RT_post_testretest               = subset(RT_post_testretest, !subject%in%c('i011','i017','i061','i064','i080','i124','i133','i138','i177')) 
+RT_post_testretest               = subset(RT_post_testretest, !subject%in%c('i011','i017','i061','i064','i124','i133','i138','i177')) 
 
 RT_post_testretest$fsubject      = factor(RT_post_testretest$subject)
 RT_post_testretest$fgroup        = factor(RT_post_testretest$group,   levels = c(1,2,3,4), labels = c("GG_EE", "GG_NE", "Active_Control", "Passive_Control"))
@@ -150,11 +158,15 @@ scatterplot       = ggplot(RT_post_wide_aov, aes(x=pretest, y=posttest, color=fg
 print(scatterplot)
 
 # boxplot
-boxplot         = ggplot(RT_post_aov, aes(x=fgroup, y=threshold, fill=fprepost)) + 
-                  geom_boxplot() 
+boxplot         = ggplot(RT_post, aes(x=fgroup, y=threshold, fill=fprepost)) + 
+                  geom_boxplot() + theme_classic()
 dotplot         = boxplot + geom_dotplot(binaxis='y', stackdir='center', position=position_dodge(0.75), dotsize=0.5, binwidth=15) +
-                  labs(title="Intervention effect on rise time task",x="group", y = "threshold", fill="test phase")
-dotplot
+                  labs(title="Intervention effect on rise time task",x="group", y = "threshold (ms)", fill="test phase")
+
+tiff("interventioneffect_dotplot.tiff",width=800,height=800)                 #save figure in wd
+print(dotplot)
+dev.off()
+
 
 boxplot(RT_post_melt_aov$value)
 
@@ -168,19 +180,19 @@ quantile75 = function(data){
   return(x)
 }
 
-plot.median.iqr.aov            = cast(RT_post_melt_aov, fgroup*fprepost ~ ., c(median,quantile25,quantile75))
-names(plot.median.iqr.aov)[3]  = "median"
-plot.median.iqr.aov
+plot.median.iqr            = cast(RT_post_melt, fgroup*fprepost ~ ., c(median,quantile25,quantile75))
+names(plot.median.iqr)[3]  = "median"
+plot.median.iqr
 
 # ggplot                                                              # you need data frame with median and quantiles for this
-bar.median.iqr.aov  = ggplot(plot.median.iqr.aov, aes(x=fgroup, y=median, fill=fprepost)) + 
+bar.median.iqr  = ggplot(plot.median.iqr, aes(x=fgroup, y=median, fill=fprepost)) + 
                         geom_bar(stat="identity", color="black", 
                            position=position_dodge()) +
                         geom_errorbar(aes(ymin=quantile25, ymax=quantile75), width=.2,
                            position=position_dodge(.9)) +
                       ggtitle(label = "Intervention effect on rise time task") + xlab(label="Group") + ylab(label="Median threshold") +
                       labs(fill = "Testing phase")                                     #change names axes and legend
-print(bar.median.iqr.aov)
+print(bar.median.iqr)
 
 # spaghettiplot
 spaghettiplot = ggplot(data = RT_post_aov, aes(x = fprepost, y = threshold, group = fsubject, colour = fgroup)) +
@@ -222,10 +234,19 @@ fit_residuals <- residuals(object = fitQQ)
 # Run Shapiro-Wilk test
 shapiro.test(x = fit_residuals )
   # normality assumption violated
+ks.test(fit_residuals, "pnorm", mean=mean(fit_residuals), sd=sd(fit_residuals))
 
-# check homogeneity of variances
-leveneTest(threshold ~ fgroup*fprepost, data = RT_post)
-  # homogeneity of variances assumption violated
+# normality check with log transform
+fitQQlog <- lm(logthreshold ~ fprepost+fgroup, data=RT_post)
+qqPlot(fitQQlog, main="QQ Plot")
+fit_residuals_log <- residuals(object = fitQQlog)
+ks.test(fit_residuals_log, "pnorm", mean=mean(fit_residuals_log), sd=sd(fit_residuals_log))
+  # normality assumption not violated
+
+
+# check homogeneity of variances with log transform
+leveneTest(logthreshold ~ fgroup*fprepost, data = RT_post)
+  # homogeneity of variances assumption not violated
 
 # check equality of distributions for permutation testing
 sm.density.compare(RT_post$threshold, RT_post$fgroup)
@@ -234,14 +255,34 @@ sm.density.compare(RT_post$threshold, RT_post$fgroup)
 
 # analyses ------------
 
+## linear mixed effects
+
+
+#options(contrasts=c("contr.sum", "contr.poly"))
+
+fit             = lmer(logthreshold  ~ fgroup*fprepost + (1|subject), data=RT_post)
+
+summary(fit) 
+
+Anova(fit, type = "III", test.statistic = "F")
+# lme4 documentation: Anova provides a wrapper for Kenward-Roger-corrected tests using pbkrtest
+# Kenward-Roger approximation, so indeed a good way to get p-values for mixed models
+
+ph              = emmeans(fit, specs = pairwise  ~ fgroup:fprepost, adjust = "bonferroni")
+ph$contrasts
+
+
+
+### permutation tests
+
 # order data for Kruskal.test (order by group)
-RT_post_aov_ordered = RT_post_aov[order(RT_post_aov$fgroup),]
+RT_post_aov_ordered = RT_post_aov[order(RT_post_aov$fgroup),]                     # data need to be ordered this way for Kruskal
 kruskal.test(threshold ~ fgroup, data =  RT_post_aov_ordered)                     # kruskal: when factor contains more than two levels
   # one-way analysis group: no sign difference between groups                       
 
 wilcox.test(RT_post_wide_aov$pretest, RT_post_wide_aov$posttest, 
-            alternative ="greater", paired = TRUE)                        # wilcoxon:  when comparing two conditions with paired observations
-# mann-whitney: two conditions with independent observations
+            alternative ="greater", paired = TRUE)                                # wilcoxon:  when comparing two conditions with paired observations
+                                                                                  # mann-whitney: two conditions with independent observations
   # one-way analysis test phase: sign difference between pretest and posttest
   # Ha not possible in terms of mean, median, ... because of non-parametric test
   # Kids are more likely to have lower RT thresholds in the post-test compared
@@ -255,9 +296,11 @@ summary(Permutation)
 
 RT_post_aov_ph <- dcast(RT_post_aov, fsubject ~ fgroup + fprepost, value.var="threshold")
 head(RT_post_aov_ph)
+  # this format is needed for post-hoc test
+  # post hoc test by performing wilcox test on all conditions of interest
 
-GGEEpre_vs_GGEEpost = wilcox.test(RT_post_aov_ph$GG_EE_pretest,                            # 0.0001410895  (holm & hochberg)
-                                  RT_post_aov_ph$GG_EE_posttest,                           # 0.0001410895  (bonferroni)
+GGEEpre_vs_GGEEpost = wilcox.test(RT_post_aov_ph$GG_EE_pretest,                            # 0.0002313328  (holm & hochberg)
+                                  RT_post_aov_ph$GG_EE_posttest,                           # 0.0002313328  (bonferroni)
                                   paired=TRUE, alternative="greater")$p.value                       
 GGNEpre_vs_GGNEpost = wilcox.test(RT_post_aov_ph$GG_NE_pretest,                            # 0.0387299202  (holm & hochberg)                         
                                   RT_post_aov_ph$GG_NE_posttest,                           # 0.0580948803  (bonferroni)
@@ -267,13 +310,15 @@ ACpre_vs_ACpost     = wilcox.test(RT_post_aov_ph$Active_Control_pretest,        
                                   paired=TRUE, alternative="greater")$p.value              
   # important: cannot compute exact p-values because of ties (all cases) and zeroes (case 2 & 3)
 
-p.adjust(c(GGEEpre_vs_GGEEpost, GGNEpre_vs_GGNEpost, ACpre_vs_ACpost), method="holm")
+p.adjust(c(GGEEpre_vs_GGEEpost, GGNEpre_vs_GGNEpost, ACpre_vs_ACpost), method="bonferroni")
 
 # test-retest reliability
 
 cor.test(RT_post_wide_testretest$test, RT_post_wide_testretest$retest, method=c("pearson"))
 cor.test(pre_wide$test, pre_wide$retest, method=c("pearson"))
 cor.test(post_wide$test, post_wide$retest, method=c("pearson"))
+
+
 
 
 
